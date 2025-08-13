@@ -27,34 +27,11 @@ const formatDocumentHeader = (title: string, url: string) => {
     return `# ${title} (${hostname}) \n\n`
 }
 
-const truncateContent = (content: string, maxLength: number): string => {
-    if (content.length <= maxLength) {
-        return content
-    }
-
-    // Try to truncate at word boundary
-    const truncated = content.substring(0, maxLength)
-    const lastSpaceIndex = truncated.lastIndexOf(' ')
-
-    if (lastSpaceIndex > maxLength * 0.8) {
-        return truncated.substring(0, lastSpaceIndex) + '...'
-    }
-
-    return truncated + '...'
-}
-
 export const getTabContents = async (documents: ChatDocuments) => {
     const result: string[] = []
-    const maxContextSize = await getMaxContextSize()
-
-    // Calculate available space per document
-    const contextPerDocument = Math.floor(maxContextSize / documents.length)
-    let remainingContext = maxContextSize
 
     for (const doc of documents) {
         try {
-            if (remainingContext <= 0) break
-
             const pageContent = await browser.scripting.executeScript({
                 target: { tabId: doc.tabId! },
                 func: () => ({
@@ -87,20 +64,9 @@ export const getTabContents = async (documents: ChatDocuments) => {
                 extractedContent = defaultExtractContent(content.html)
             }
 
-            // Calculate available space for this document's content
-            const headerLength = header.length
-            const availableSpace = Math.min(
-                contextPerDocument - headerLength,
-                remainingContext - headerLength
-            )
+            const documentContent = `${header}${extractedContent}`
+            result.push(documentContent)
 
-            if (availableSpace > 0) {
-                const truncatedContent = truncateContent(extractedContent, availableSpace)
-                const documentContent = `${header}${truncatedContent}`
-
-                result.push(documentContent)
-                remainingContext -= documentContent.length
-            }
         } catch (e) {
             console.error("Error processing document:", e)
             continue

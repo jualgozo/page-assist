@@ -17,6 +17,9 @@ import {
 import { getModelNicknameByID } from "@/db/dexie/nickname"
 import { ChatDocuments } from "@/models/ChatTypes"
 import { getTabContents } from "@/libs/get-tab-contents"
+import { PageAssistVectorStore } from "@/libs/PageAssistVectorStore"
+import { getPageAssistTextSplitter } from "@/utils/text-splitter"
+import { pageAssistEmbeddingModel } from "@/models/embedding"
 
 export const tabChatMode = async (
   message: string,
@@ -113,7 +116,24 @@ export const tabChatMode = async (
     let query = message
     const { ragPrompt: systemPrompt, ragQuestionPrompt: questionPrompt } =
       await promptForRag()
-    let context = await getTabContents(documents)
+    const raw_context = await getTabContents(documents)
+    const textSplitter = await getPageAssistTextSplitter()
+    const embeddingModel = await pageAssistEmbeddingModel({
+      baseUrl: cleanUrl(url),
+      // Using a sensible default for in-memory RAG. This could be a setting in the future.
+      model: "all-minilm"
+    })
+
+    const docs = await textSplitter.createDocuments([raw_context])
+
+    const vectorStore = await PageAssistVectorStore.fromDocuments(docs, embeddingModel, {
+      knownledge_id: "temp_web_rag",
+      file_id: "temp_uploaded_files" // This flag ensures the vector store is kept in-memory
+    })
+
+    const retriever = vectorStore.asRetriever()
+    const relevantDocs = await retriever.getRelevantDocuments(message)
+    const context = relevantDocs.map((doc) => doc.pageContent).join("\n\n")
 
     let humanMessage = await humanMessageFormatter({
       content: [
